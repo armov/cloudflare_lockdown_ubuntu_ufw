@@ -1,0 +1,146 @@
+#SPDX-License-Identifier: MIT-0
+---
+# ===== Ensure legacy firewalls are disabled =====
+
+- name: Check if ferm service exists
+  ansible.builtin.stat:
+    path: /lib/systemd/system/ferm.service
+  register: ferm_service
+
+- name: Stop ferm service if present
+  ansible.builtin.systemd:
+    name: ferm
+    state: stopped
+  when: ferm_service.stat.exists
+  ignore_errors: true
+
+- name: Disable ferm service if present
+  ansible.builtin.systemd:
+    name: ferm
+    enabled: false
+  when: ferm_service.stat.exists
+  ignore_errors: true
+
+- name: Mask ferm service if present
+  ansible.builtin.systemd:
+    name: ferm
+    masked: true
+  when: ferm_service.stat.exists
+  ignore_errors: true
+
+- name: Remove ferm package if installed
+  ansible.builtin.apt:
+    name: ferm
+    state: absent
+  when: ferm_service.stat.exists
+  ignore_errors: true
+
+# ===== UFW setup starts here =====
+
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+
+# Ensure IPv6 is enabled in UFW (Cloudflare WILL use IPv6)
+- name: Enable IPv6 in UFW
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: "IPV6={{ 'yes' if ufw_enable_ipv6 else 'no' }}"
+  notify: reload ufw
+
+# Defaults: rely on default deny (NO explicit deny rules)
+- name: Set default incoming policy to deny
+  ansible.builtin.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Set default outgoing policy to allow
+  ansible.builtin.ufw:
+    direction: outgoing
+    policy: allow
+
+# SSH safety net
+- name: Allow SSH
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ ufw_ssh_port }}"
+    proto: tcp
+  when: ufw_allow_ssh | bool
+
+# Optional Zabbix Agent
+- name: Allow Zabbix Agent
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ ufw_zabbix_agent_port }}"
+    proto: tcp
+  when: ufw_allow_zabbix_agent | bool
+
+# ===== Cleanup: remove legacy "ALLOW Anywhere" rules for 80/443 =====
+
+- name: Remove global allow rules for restricted ports (IPv4)
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    delete: true
+  loop: "{{ ufw_cloudflare_ports }}"
+  notify: reload ufw
+
+- name: Get UFW status numbered (for IPv6 cleanup)
+  ansible.builtin.command: ufw status numbered
+  register: ufw_status_numbered
+  changed_when: false
+
+- name: Build list of IPv6 "ALLOW Anywhere" rule numbers for restricted ports
+  ansible.builtin.set_fact:
+    ufw_v6_anywhere_rule_numbers: >-
+      {{
+        (
+          ufw_status_numbered.stdout_lines
+          | select('search', '80/tcp \\(v6\\)\\s+ALLOW IN\\s+Anywhere \\(v6\\)')
+          | map('regex_search', '^\\[\\s*([0-9]+)\\]', '\\1')
+          | list
+        )
+        +
+        (
+          ufw_status_numbered.stdout_lines
+          | select('search', '443/tcp \\(v6\\)\\s+ALLOW IN\\s+Anywhere \\(v6\\)')
+          | map('regex_search', '^\\[\\s*([0-9]+)\\]', '\\1')
+          | list
+        )
+      }}
+
+- name: Remove global allow rules for restricted ports (IPv6) by rule number
+  ansible.builtin.command: "ufw --force delete {{ item }}"
+  loop: "{{ ufw_v6_anywhere_rule_numbers | map('int') | sort(reverse=true) | map('string') | list }}"
+  when: ufw_v6_anywhere_rule_numbers | length > 0
+  notify: reload ufw
+  changed_when: true
+
+
+# ===== Allow Cloudflare only (v4 + v6) =====
+
+# Cloudflare IPv4
+- name: Allow Cloudflare IPv4 to restricted ports
+  ansible.builtin.ufw:
+    rule: allow
+    from_ip: "{{ item.0 }}"
+    to_port: "{{ item.1 }}"
+    proto: tcp
+  loop: "{{ ufw_cloudflare_ipv4 | product(ufw_cloudflare_ports) | list }}"
+
+# Cloudflare IPv6
+- name: Allow Cloudflare IPv6 to restricted ports
+  ansible.builtin.ufw:
+    rule: allow
+    from_ip: "{{ item.0 }}"
+    to_port: "{{ item.1 }}"
+    proto: tcp
+  loop: "{{ ufw_cloudflare_ipv6 | product(ufw_cloudflare_ports) | list }}"
+
+- name: Enable UFW
+  ansible.builtin.ufw:
+    state: enabled
