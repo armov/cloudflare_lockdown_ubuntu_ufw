@@ -1,9 +1,5 @@
 #SPDX-License-Identifier: MIT-0
 ---
-# Keep SSH open
-ufw_allow_ssh: true
-ufw_ssh_port: 22
-
 # Enable IPv6 handling in UFW (required for Cloudflare)
 ufw_enable_ipv6: true
 

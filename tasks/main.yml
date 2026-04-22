@@ -62,14 +62,6 @@
     direction: outgoing
     policy: allow
 
-# SSH safety net
-- name: Allow SSH
-  ansible.builtin.ufw:
-    rule: allow
-    port: "{{ ufw_ssh_port }}"
-    proto: tcp
-  when: ufw_allow_ssh | bool
-
 # Optional Zabbix Agent
 - name: Allow Zabbix Agent
   ansible.builtin.ufw:
