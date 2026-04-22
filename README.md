@@ -51,6 +51,3 @@ Ubuntu 22.04 / 24.04.
   become: true
   roles:
     - role: cloudflare_lockdown_ubuntu_ufw
-      vars:
-        ufw_allow_ssh: true
-        ufw_ssh_port: 22
