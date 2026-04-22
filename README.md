@@ -10,7 +10,6 @@ Ubuntu 22.04 / 24.04.
 ## What this role does
 
 - Sets UFW defaults to `deny incoming`, `allow outgoing`
-- Allows SSH access (configurable)
 - Allows optional monitoring ports (e.g. Zabbix Agent)
 - **Removes any existing broad `ALLOW Anywhere` rules for ports 80/443 (IPv4 and IPv6)**
 - Allows Cloudflare IPv4 and IPv6 CIDR ranges to access ports 80/443
@@ -34,8 +33,6 @@ Ubuntu 22.04 / 24.04.
 ## Variables
 
 ### Core
-- `ufw_allow_ssh` (default: `true`)
-- `ufw_ssh_port` (default: `22`)
 - `ufw_cloudflare_ports` (default: `[80, 443]`)
 - `ufw_cloudflare_ipv4`
 - `ufw_cloudflare_ipv6`
